@@ -6,78 +6,263 @@
  */
 
 /**
+  * Copyright 2013 Mira Leung
+  *
+  * This file is part of OG Member Cascade.
+  *
+  * OG Member Cascade is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 2 of the License, or
+  * (at your option) any later version.
+  *
+  * OG Member Cascade is distributed in the hope that it will be useful,
+  * but without any warranty; without even the implied warranty of
+  * merchantability or fitness for a particular purpose.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with OG Member Cascade.  If not, see <http://www.gnu.org/licenses/>.
+  */
+
+/**
  * Implements hook_install().
  */
-/* function og_subgroup_cascade_install() {
-	if (field_info_field('field_og_subgroup_cascade')) return;
+ function og_member_cascade_install() {
+  echo "\n In install";
+  $og_group_name = OG_MEMBEER_CASCADE_GROUP;
+	$field_cascade_name = OG_MEMBER_CASCADE_FIELD;
+	$field_og_supergroup_ref_name = OG_MEMBER_CASCADE_SUPER_REF;
+  $allowed_values = array(
+      0 => 'No - do not cascade members into this group\'s subgroups.',
+      1 => 'Yes - cascade members into  this group\'s subgroups.',
+    );	
+  
+  if (!node_type_get_type($og_group_name)) {
+    $og_group = array(
+      'type' => $og_group_name,
+      'name' => 'OG Member Cascade Group',
+      'base' => 'og_member_cascade',
+      'description' => 'OG Group with group hierarchy and membership inheritance management',
+      'help' => 'Treat this as a regular OG group, but with additional membership inheritance management capabilities',
+      'custom' => FALSE, // defined by a module
+      'modified' => FALSE,
+      'locked' => TRUE,
+      'disabled' => FALSE,
+      'has_title' => TRUE,
+      'title_label' => 'Group Name',
+      'module' => 'og_member_cascade',
+      'orig_type' => $og_group_name,
+    );
+    node_type_save($og_group);
+    echo "\n Created OG Member Cascade Group \n";
+  }  
 	
-	// Create the field base
-	$field = array(
-		'field_name' => 'field_og_subgroup_cascade',
-		'type' => 'entityreference',
-	);
-	
-	field_create_field($field);
-	
-	$field_instance = array(
-    'bundle' => 'a_test_og_groups',
-    'default_value' => NULL,
-    'default_value_function' => '',
-    'deleted' => 0,
-    'description' => '',
-    'display' => array(
-      'default' => array(
-        'label' => 'above',
-        'module' => 'entityreference',
-        'settings' => array(
-          'link' => FALSE,
+	if (!field_info_field($field_cascade_name)) {
+	  $field = array(
+	    'active' => 1,
+      'cardinality' => 1,
+      'deleted' => 0,
+      'entity_types' => array(),
+      'field_name' => $field_cascade_name,
+      'foreign keys' => array(),
+      'indexes' => array(
+        'value' => array(
+          0 => 'value',
         ),
-        'type' => 'entityreference_label',
+      ),
+      'locked' => 0,
+      'module' => 'list',
+      'no_ui' => TRUE,
+      'settings' => array(
+        'allowed_values' => $allowed_values,
+        'allowed_values_function' => '',
+      ),
+      'translatable' => 0,
+      'type' => 'list_boolean',
+    );
+	
+	  $field = field_create_field($field);
+	  echo "\n Field " . OG_MEMBER_CASCADE_FIELD . " created.";
+	   
+	}
+	
+	// Check if any field instance of this exists
+	if (!field_info_instance('', $field_cascade_name, OG_MEMBER_CASCADE_FIELD)) {
+    
+	  $instance = array(
+      'bundle' => OG_MEMBER_CASCADE_GROUP,
+      'default_value' => array(
+        0 => array(
+          'value' => 1,
+        ),
+      ),
+      'deleted' => 0,
+      'description' => '',
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'module' => 'list',
+          'settings' => array(),
+          'type' => 'list_default',
+          'weight' => 3,
+        ),
+        'teaser' => array(
+          'label' => 'above',
+          'settings' => array(),
+          'type' => 'hidden',
+          'weight' => 0,
+        ),
+      ),
+      'entity_type' => 'node',
+      'field_name' => $field_cascade_name,
+      'label' => 'OG Member Cascade',
+      'required' => TRUE,
+      'settings' => array(
+        'user_register_form' => FALSE,
+      ),
+      'view modes' => array(
+        'full' => array(
+          'label' => 'above',
+          'type' => 'options_onoff',
+        ),
+        'teaser' => array(
+          'label' => 'above',
+          'type' => 'options_onoff',
+        ),
+      ),
+      'widget' => array(
+        'module' => 'options',
+        'settings' => array(),
+        'type' => 'options_buttons',
+        'weight' => 3,
+      ),
+      'widget_type' => 'options_select',
+    );
+	    
+	  field_create_instance($instance);	
+	  echo "\n Field instance OG Member Cascade created.";
+	}
+	
+	
+	
+	if  (!field_info_field($field_og_supergroup_ref_name)) {
+	  $field = array(
+      'active' => 1,
+      'cardinality' => -1,
+      'deleted' => 0,
+      'entity_types' => array(),
+      'field_name' => OG_MEMBER_CASCADE_SUPER_REF,
+      'indexes' => array(
+        'target_id' => array(
+          0 => 'target_id',
+        ),
+      ),
+      'locked' => 0,
+      'module' => 'entityreference',
+      'bundle' => OG_MEMBER_CASCADE_GROUP,
+      'settings' => array(
+        'handler' => 'base',
+        'handler_settings' => array(
+          'behaviors' => array(
+            'views-select-list' => array(
+              'status' => 0,
+            ),
+          ),
+          'sort' => array(
+            'type' => 'none',
+          ),
+          'target_bundles' => array(
+            OG_MEMBER_CASCADE_GROUP => OG_MEMBER_CASCADE_GROUP,
+          ),
+        ),
+        'target_type' => 'node',
+      ),
+      'translatable' => 0,
+      'type' => 'entityreference',
+    );
+    
+   $field = field_create_field($field);
+	  echo "\n Field " . OG_MEMBER_CASCADE_SUPER_REF . " created.";
+	}
+	
+	if (!field_info_instance('', 	$field_og_supergroup_ref_name, OG_MEMBER_CASCADE_SUPER_REF)) {
+	  $instance = array(
+	    'default_value' => NULL,
+      'default_value_function' => '',
+      'deleted' => 0,
+      'description' => '',
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'module' => 'entityreference',
+          'settings' => array(
+            'link' => FALSE,
+          ),
+          'type' => 'entityreference_label',
+          'weight' => 4,
+        ),
+        'teaser' => array(
+          'label' => 'above',
+          'settings' => array(),
+          'type' => 'hidden',
+          'weight' => 0,
+        ),
+      ),
+      'bundle' => OG_MEMBER_CASCADE_GROUP,
+      'entity_type' => 'node',
+      'field_name' => OG_MEMBER_CASCADE_SUPER_REF,
+      'label' => 'OG Supergroup Ref',
+      'required' => 0,
+      'settings' => array(
+        'behaviors' => array(
+          'prepopulate' => array(
+            'status' => 0,
+          ),
+        ),
+        'user_register_form' => FALSE,
+      ),
+      'widget' => array(
+        'active' => 1,
+        'module' => 'options',
+        'settings' => array(),
+        'type' => 'options_buttons',
         'weight' => 4,
       ),
-      'nodechanges' => array(
-        'label' => 'above',
-        'settings' => array(),
-        'type' => 'hidden',
-        'weight' => 0,
-      ),
-      'teaser' => array(
-        'label' => 'above',
-        'settings' => array(),
-        'type' => 'hidden',
-        'weight' => 0,
-      ),
-    ),
-    'entity_type' => 'node',
-    'fences_wrapper' => 'div',
-    'field_name' => 'field_og_subgroup_cascade',
-    'label' => 'OG Member Cascade',
-    'required' => 1,
-    'settings' => array(
-      'behaviors' => array(
-        'prepopulate' => array(
-          'status' => 0,
-        ),
-      ),
-      'user_register_form' => FALSE,
-    ),
-    'widget' => array(
-      'active' => 1,
-      'module' => 'options',
-      'settings' => array(
-        'content_taxonomy_opt_groups' => FALSE,
-      ),
-      'type' => 'options_select',
-      'weight' => 34,
-    ),
-  );
+    );
+    
+    	    
+	  field_create_instance($instance);	
+	  echo "\n Field instance OG Supergroup Ref created.";
 	
-	field_create_instance($field_instance);
+	}
 }
 
 /**
- * Implements hook_uninstall().
- *//*
-function og_subgroup_cascade_uninstall() {
-  field_delete_field('field_og_subgroup_cascade');
-} */
+ * Implements hook_uninstall()
+ */
+function og_member_cascade_uninstall() {
+  echo "\n In uninstall \n";
+  $og_member_cascade_fields = array(
+    OG_MEMBER_CASCADE_FIELD,
+    OG_MEMBER_CASCADE_SUPER_REF,
+  );
+  foreach(field_info_instances() as $bundles) {
+    foreach($bundles as $instances) {
+      foreach($instances as $instance) {
+        if(in_array($instance['field_name'], $og_member_cascade_fields)) {
+          field_delete_instance($instance);
+          echo "\n Removed field ". $instance['field_name'];
+        } else {
+          $field = field_info_field($instance['field_name']);
+          if($field['type']=='entityreference' && 
+            ($field['field_name'] == OG_MEMBER_CASCADE_FIELD ||
+            $field['field_name'] == OG_MEMBER_CASCADE_SUPER_REF)) {
+              field_delete_instance($instance);
+              echo "\n Removed field " . $instance['field_name'];
+          }
+        }
+      }
+    }
+  }
+}
+
