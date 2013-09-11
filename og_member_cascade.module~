@@ -11,6 +11,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', TRUE);
 ini_set('display_startup_errors', TRUE);
  
+// GPLv2 Licensing Stuff
 /**
   * Copyright 2013 Mira Leung
   *
@@ -35,13 +36,29 @@ define('OG_MEMBER_CASCADE_GROUP', 'og_member_cascade_group');
 define('OG_MEMBER_CASCADE_FIELD', 'og_member_cascade');
 define('OG_MEMBER_CASCADE_SUPER_REF', 'field_og_supergroup_ref');
 
+/**
+ * ===========================================
+ * HOOKS
+ * ===========================================
+ */
+
+/**
+ * Implements hook_og_role_grant
+ */
 function og_member_cascade_og_role_grant($entity_type, $gid, $uid, $rid) {
 	og_member_cascade_cascade_memberships_down($uid, $gid);
 }
 
+/**
+ * Implements hook_og_role_change_permissions
+ */
 function og_member_cascade_og_role_change_permissions($role, $grant, $revoke) {
 	og_member_cascade_cascade_memberships_down($uid, $gid);
 }
+
+/**
+ * Implements hook_og_membership_insert
+ */
 
 function og_member_cascade_og_membership_insert($og_membership) {
 	if ($og_membership->entity_type != 'user' ||
@@ -61,6 +78,9 @@ function og_member_cascade_og_membership_insert($og_membership) {
 
 // Don't need to implement hook_og_membership_insert: role_insert hook takes care of this
 
+/**
+ * Implements hook_og_membership_delete
+ */
 function og_member_cascade_og_membership_delete($og_membership) {
 	$uid = $og_membership->etid;
 	$nid = $og_membership->gid;
@@ -68,6 +88,9 @@ function og_member_cascade_og_membership_delete($og_membership) {
 	og_member_cascade_cascade_delete_down($uid, $nid, $state);
 } 
 
+/**
+ * Implements hook_og_membership_update
+ */
 function og_member_cascade_og_membership_update($og_membership) {
 	$uid = $og_membership->etid;
 	$nid = $og_membership->gid;
@@ -79,14 +102,29 @@ function og_member_cascade_og_membership_update($og_membership) {
 	  og_member_cascade_cascade_update_down($uid, $nid, $state);
 }
 
+/**
+ * Implements hook_node_update
+ */
 function og_member_cascade_node_update($node) {
 	og_member_cascade_node_cascade($node);
 }
 
+/**
+ * Implements hook_node_insert
+ */
 function og_member_cascade_node_insert($node) {
 	og_member_cascade_node_cascade($node);
 }
 
+/**
+ * ===========================================
+ * HELPERS
+ * ===========================================
+ */
+
+/**
+ * Cascades membership deletion into subgroups
+ */
 function og_member_cascade_cascade_delete_down($uid, $gid, $state) {
 	if (no_subgroups($gid) || no_cascade($gid)) return;
 	foreach (get_subgroup_query($gid) as $q) {
@@ -97,6 +135,9 @@ function og_member_cascade_cascade_delete_down($uid, $gid, $state) {
 	}
 }
 
+/**
+ * Cascade membership updates into subgroups
+ */
 function 	og_member_cascade_cascade_update_down($uid, $nid, $state) {
 	foreach (get_subgroup_query($nid) as $q) {
 		$subnid = $q->etid;
@@ -104,6 +145,7 @@ function 	og_member_cascade_cascade_update_down($uid, $nid, $state) {
 		  og_member_cascade_og_membership_state_alter($uid, $subnid, $state);
 	}
 }
+
 
 function og_member_cascade_membership_type_update_down($og_membership) {
  	$uid = $og_membership->etid;
