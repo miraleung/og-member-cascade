@@ -5,6 +5,7 @@
  * Install, update, and uninstall functions for the og_subgroup_cascade module.
  */
 
+// GPLv2 Licensing Stuff
 /**
   * Copyright 2013 Mira Leung
   *
@@ -28,8 +29,16 @@
  * Implements hook_install().
  */
  function og_member_cascade_install() {
-  echo "\n In install";
-  $og_group_name = OG_MEMBEER_CASCADE_GROUP;
+  echo "\n In install\n";
+  
+  // update weight
+   db_update('system')
+    ->fields(array('weight' => 2))
+    ->condition('name', 'og_member_cascade', '=')
+    ->execute();
+  
+  
+  $og_group_name = OG_MEMBER_CASCADE_GROUP;
 	$field_cascade_name = OG_MEMBER_CASCADE_FIELD;
 	$field_og_supergroup_ref_name = OG_MEMBER_CASCADE_SUPER_REF;
   $allowed_values = array(
@@ -37,7 +46,15 @@
       1 => 'Yes - cascade members into  this group\'s subgroups.',
     );	
   
-  if (!node_type_get_type($og_group_name)) {
+  $query = new EntityFieldQuery();
+  $result = $query
+    ->entityCondition('entity_type', 'node')
+    ->propertyCondition('type', $og_group_name)
+    ->propertyCondition('title', 'Group Name')
+    ->execute();
+  
+#  echo(key($result) . " " . key(reset($result)) . key(reset(reset($result))."\n"));
+  if (empty($result)) {
     $og_group = array(
       'type' => $og_group_name,
       'name' => 'OG Member Cascade Group',
@@ -96,6 +113,7 @@
           'value' => 1,
         ),
       ),
+      'default_value' => 0,
       'deleted' => 0,
       'description' => '',
       'display' => array(
@@ -242,23 +260,31 @@
  */
 function og_member_cascade_uninstall() {
   echo "\n In uninstall \n";
+  $og_member_cascade_field = 'og_member_cascade';
+  $og_supergroup_ref = 'field_og_supergroup_ref';
   $og_member_cascade_fields = array(
-    OG_MEMBER_CASCADE_FIELD,
-    OG_MEMBER_CASCADE_SUPER_REF,
+    $og_member_cascade_field, $og_supergroup_ref,
   );
+
   foreach(field_info_instances() as $bundles) {
     foreach($bundles as $instances) {
       foreach($instances as $instance) {
-        if(in_array($instance['field_name'], $og_member_cascade_fields)) {
-          field_delete_instance($instance);
-          echo "\n Removed field ". $instance['field_name'];
-        } else {
+        $field_name = $instance['field_name'];
+        echo "FIELD NAME: $field_name\n";
+        foreach ($og_member_cascade_fields as $del_field) {
+          echo "\n DEL FIELD: $del_field\n";
+          if($field_name == $del_field) {
+            field_delete_instance($instance);
+            echo "\n Deleted $field_name \n";
+         } else {
           $field = field_info_field($instance['field_name']);
-          if($field['type']=='entityreference' && 
-            ($field['field_name'] == OG_MEMBER_CASCADE_FIELD ||
-            $field['field_name'] == OG_MEMBER_CASCADE_SUPER_REF)) {
-              field_delete_instance($instance);
-              echo "\n Removed field " . $instance['field_name'];
+          $field_name = $field['field_name'];
+          if($field['type']=='entityreference') 
+            foreach ($og_member_cascade_fields as $del_field) 
+              if ($field_name == $del_field) {
+                field_delete_instance($instance);
+                echo "\n Deleted $field_name \n";
+            }
           }
         }
       }

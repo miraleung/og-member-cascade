@@ -73,7 +73,7 @@ function og_member_cascade_og_membership_insert($og_membership) {
 	  $cascade = $q->value;
 	}
 	if ($cascade == 1) 
-	  og_member_cascade_cascade_memberships_down($uid, $gid);
+	  og_member_cascade_cascade_memberships_down($uid, $gid, $cascade);
 }
 
 // Don't need to implement hook_og_membership_insert: role_insert hook takes care of this
@@ -106,6 +106,8 @@ function og_member_cascade_og_membership_update($og_membership) {
  * Implements hook_node_update
  */
 function og_member_cascade_node_update($node) {
+dpm("PRESAVE");
+dpm($node);
 	og_member_cascade_node_cascade($node);
 }
 
@@ -126,11 +128,11 @@ function og_member_cascade_node_insert($node) {
  * Cascades membership deletion into subgroups
  */
 function og_member_cascade_cascade_delete_down($uid, $gid, $state) {
-	if (no_subgroups($gid) || no_cascade($gid)) return;
-	foreach (get_subgroup_query($gid) as $q) {
-		$subnid = $q->etid;
-		if (in_array($uid, _get_users_in_group($subnid))) {
-			_revoke_user_membership(user_load($uid), $subnid, $state);
+	if (_og_member_cascade_no_subgroups($gid) || _og_member_cascade_no_cascade($gid)) return;
+	foreach (_og_member_cascade_get_subgroup_query($gid) as $subnid) {
+//		$subnid = $q->etid;
+		if (in_array($uid, _og_member_cascade_get_users_in_group($subnid))) {
+			_og_member_cascade_revoke_user_membership(user_load($uid), $subnid, $state);
 		}
 	}
 }
@@ -139,35 +141,44 @@ function og_member_cascade_cascade_delete_down($uid, $gid, $state) {
  * Cascade membership updates into subgroups
  */
 function 	og_member_cascade_cascade_update_down($uid, $nid, $state) {
-	foreach (get_subgroup_query($nid) as $q) {
-		$subnid = $q->etid;
-		if (in_array($uid, _get_users_in_group($subnid)))
+	foreach (_og_member_cascade_get_subgroup_query($nid) as $subnid) {
+//		$subnid = $q->etid;
+		if (in_array($uid, _og_member_cascade_get_users_in_group($subnid)))
 		  og_member_cascade_og_membership_state_alter($uid, $subnid, $state);
 	}
 }
 
-
+/**
+ * Update membeships in subgroups
+ */
 function og_member_cascade_membership_type_update_down($og_membership) {
  	$uid = $og_membership->etid;
 	$nid = $og_membership->gid;
 	$state = $og_membership->state;
-	if (no_subgroups($nid) || no_cascade($nid)) return;
-	foreach (get_subgroup_query($nid) as $q) {
-		$subnid = $q->etid;
+	if (_og_member_cascade_no_subgroups($nid) || _og_member_cascade_no_cascade($nid)) return;
+	foreach (_og_member_cascade_get_subgroup_query($nid) as $subnid) {
+//		$subnid = $q->etid;
 		$og_membership->gid = subnid;
-		if (in_array($uid, _get_users_in_group($subnid))) { 
+		// Change OG membership state if needed
+		if (in_array($uid, _og_member_cascade_get_users_in_group($subnid))) { 
 		  og_member_cascade_og_membership_state_alter($uid, $subnid, $state);
 		}
 	}
 }
 
-// Trial run
+
+/**
+ * Changes an OG membership's state (e.g. active --> pending)
+ */
 function og_member_cascade_og_membership_state_alter($uid, $gid, $new_state) {
   $new_ogm = _og_member_cascade_new_og_membership($uid, $gid, $new_state);
  	og_membership_save($new_ogm); 
 }
 
 
+/**
+ * Helper for og_member_cascade_og_membership_state_alter
+ */
 function _og_member_cascade_new_og_membership($etid, $gid, $new_state) {
   $ra_group_entity = _og_member_cascade_get_ogm_group_entity_type($gid, $etid);
   $group_type = key($ra_group_entity);
@@ -193,14 +204,21 @@ function _og_member_cascade_new_og_membership($etid, $gid, $new_state) {
 }
 
 
-function og_member_cascade_cascade_memberships_down($uid, $gid) {
-	if (no_subgroups($gid)) return; // empty glass in case not thirsty
+/**
+ * Cascade new memberships down into subgroups
+ */
+function og_member_cascade_cascade_memberships_down($uid, $gid, $cascade = -1) {
+  dpm("NO SUBGROUPS? " . _og_member_cascade_no_subgroups($gid));
+  
+  if ($cascade == -1) $cascade = _og_member_cascade_no_subgroups($gid);
+  dpm("CASCADE? $cascade");
+	if (!$cascade) return; // empty glass in case not thirsty
 	$user = user_load($uid);
 
-	foreach (get_subgroup_query($gid) as $q) {
-    $subnid = $q->etid;
-		if (!in_array($uid, _get_users_in_group($subnid)))  {
-		  _add_user_membership($user, $q->etid);
+	foreach (_og_member_cascade_get_subgroup_query($gid) as $subnid) {
+    //$subnid = $q->etid;
+		if (!in_array($uid, _og_member_cascade_get_users_in_group($subnid)))  {
+		  _og_member_cascade_add_user_membership($user, $subnid);
 		} else {
 		  $super_ogm_state = _og_member_cascade_get_ogm_state($uid, $gid);
 		  $sub_ogm_state = _og_member_cascade_get_ogm_state($uid, $subnid);
@@ -212,65 +230,132 @@ function og_member_cascade_cascade_memberships_down($uid, $gid) {
 }
 
 
+/**
+ * Get group entity types
+ */
 function _og_member_cascade_get_ogm_group_entity_type($gid, $etid) {
-  $etid = mysql_real_escape_string($etid);
-  $gid = mysql_real_escape_string($gid);
-  $query = db_query("SELECT entity_type, group_type FROM og_membership 
-    WHERE gid = '$gid' AND etid = '$etid'");
-  $group_type = ""; $entity_type = "";
-  foreach ($query as $q) {
-    $group_type = $q->group_type;
-    $entity_type = $q->entity_type;
-  }
-  return array($group_type => $entity_type);
+  $e = $etid;
+  $g = $gid;
+#  $etid = mysql_real_escape_string($etid);
+#  $gid = mysql_real_escape_string($gid);
+#  $query = db_query("SELECT entity_type, group_type FROM og_membership 
+#    WHERE gid = '$gid' AND etid = '$etid'");
+#  $group_type = ""; $entity_type = "";
+#  foreach ($query as $q) {
+#    $group_type = $q->group_type;
+#    $entity_type = $q->entity_type;
+#  }
+#  
+  $query1 = new EntityFieldQuery();
+  $result1 = $query1
+    ->entityCondition('entity_type', 'og_membership')
+    ->propertyCondition("gid", $g, "=")
+    ->propertyCondition("etid", $e, "=")
+    ->execute();
+    dpm("THERE");
+  $wrapper = entity_metadata_wrapper(key($result1), reset(reset($result1)));
+  $og_mbrship = $wrapper->value();
+  $ogid = $og_mbrship->id;
+  dpm($ogid);
+  $themembership = og_membership_load($ogid);
+  dpm(og_membership_load($ogid));
+  $group_type = $themembership->group_type;
+  $entity_type = $themembership->entity_type;
+  $ra_group_entity = array($group_type => $entity_type);
+  dpm($themembership);
+  dpm($ra_group_entity);
+  
+  return $ra_group_entity;
 }
 
+
+/**
+ * Get OG membership state
+ */
 function _og_member_cascade_get_ogm_state($uid, $gid) {
-  $uid = mysql_real_escape_string($uid);
-  $gid = mysql_real_escape_string($gid);
-  $query = db_query("SELECT state FROM og_membership WHERE gid = '$gid' AND etid = '$uid'");
-  $state = "";
-  foreach ($query as $q) {
-    $state = $q->state;
-  }
+  $u = $uid; $g = $gid;
+#  $uid = mysql_real_escape_string($uid);
+#  $gid = mysql_real_escape_string($gid);
+#  $query = db_query("SELECT state FROM og_membership WHERE gid = '$gid' AND etid = '$uid'");
+#  $state = "";
+#  foreach ($query as $q)
+#    $state = $q->state;
+#  }
+  
+  $query1 = new EntityFieldQuery();
+  $result1 = $query1
+    ->entityCondition('entity_type', 'og_membership')
+    ->propertyCondition("gid", $g, "=")
+    ->propertyCondition("etid", $u, "=")
+    ->execute();
+    dpm("HERE");
+    dpm("HERE@");
+  dpm($result1);
+  $wrapper = entity_metadata_wrapper(key($result1), reset(reset($result1)));
+  $og_mbrship = $wrapper->value();
+  dpm($og_mbrship);
+  $ogid = $og_mbrship->id;
+  dpm($ogid);
+  $themembership = og_membership_load($ogid);
+  dpm(og_membership_load($ogid));
+  $state = $themembership->state;
+  
+
+  
   return $state;
 
 }
 
 function og_member_cascade_node_cascade($node) { 
-	if (is_string($node) || !$node->field_og_supergroup_ref || !$node->og_member_cascade) return;
-	$nid = $node->nid;
-	$supergroup_nids = _get_supergroup_nids($nid); 
-	$visited = array();
-	if (!empty($supergroup_nids)) 
-  	og_member_cascade_cascade_memberships_up($supergroup_nids, $nid, $visited);
-
+  dpm("NODE CASCADE");
+  dpm($node);
+  $supergroup_ref = $node->field_og_supergroup_ref;
+  dpm($supergroup_ref);
+	if (is_string($node)||empty($node)||$node==null) return;
+	if (!empty($supergroup_ref)) {
+	  $nid = $node->nid;
+	  $supergroup_nids = _og_member_cascade_get_supergroup_nids($nid, $supergroup_ref); 
+	  $visited = array();
+	  if (!empty($supergroup_nids)) 
+    	og_member_cascade_cascade_memberships_up($supergroup_nids, $nid, $visited);
+  }
+  dpm($node->og_member_cascade);
  	if(!$node->og_member_cascade) return; // no subgroups to cascade to
-  	
+  
+  $cascade = $node->og_member_cascade['und'][0]['value'];
 	// Cascade memberships into subgroup
-	if ($node->og_member_cascade['und'][0]['value'] == 1) {
-	  foreach (_get_users_in_group($nid) as $uid) {
-    	og_member_cascade_cascade_memberships_down($uid, $nid); 
+	if ($cascade == 1) {
+	  dpm("GOT HERE");
+	  foreach (_og_member_cascade_get_users_in_group($nid) as $uid) {
+    	og_member_cascade_cascade_memberships_down($uid, $nid, $cascade); 
      }
   }
 } 
 
-
+/**
+ * Cascade in memberships from this gruop's supergroup
+ */
 function og_member_cascade_cascade_memberships_up($supergroup_nids, $thisnid, &$visited) {
+  dpm("MBR UP");
+  dpm($supergroup_nids);
 	if (!$supergroup_nids) return;
 
 	foreach ($supergroup_nids as $supergrp_nid) {
 		$nid = $supergrp_nid; 
 		$supergrp = node_load($nid); 
+		if (!$supergrp->og_member_cascade || !$supergrp->og_member_cascade['und']) return;
 		$subgroup_cascade = $supergrp->og_member_cascade['und'][0]['value'];
 		if ($subgroup_cascade && $nid != $thisnid && !in_array($nid, $visited)) {
-				_add_all_supergroup_users($nid, $thisnid);
+				_og_member_cascade_add_all_supergroup_users($nid, $thisnid);
 		}
-		_set_add($visited, $nid, $thisnid);
+		_og_member_cascade_set_add($visited, $nid, $thisnid);
 	}
 }
 
-function _set_add(&$array) {
+/**
+ * Set addition
+ */
+function _og_member_cascade_set_add(&$array) {
 	$numargs = func_num_args();
 	if ($numargs <= 1) return;
 	$arglist = func_get_args();
@@ -281,7 +366,10 @@ function _set_add(&$array) {
 	}
 }
 
-function _get_users_in_group($gid) {
+/**
+ * Get all the users in a group
+ */
+function _og_member_cascade_get_users_in_group($gid) {
 	$members = array();
 	$query = db_select('users', 'u');
  
@@ -298,18 +386,24 @@ function _get_users_in_group($gid) {
 		return $members;
 }
 
-function _add_all_supergroup_users($supernid, $subnid) {
-	$submembers = _get_users_in_group($subnid);
-	$supermembers = _get_users_in_group($supernid);
+/**
+ * Add supergroup membeers into subgroup
+ */
+function _og_member_cascade_add_all_supergroup_users($supernid, $subnid) {
+	$submembers = _og_member_cascade_get_users_in_group($subnid);
+	$supermembers = _og_member_cascade_get_users_in_group($supernid);
 	foreach($supermembers as $member) {
 			if (!in_array($member, $submembers)) {
 			$user = user_load($member);
-			_add_user_membership($user, $subnid);
+			_og_member_cascade_add_user_membership($user, $subnid);
 		}
 	}
 }
 
-function _add_user_membership($user, $nid, $member_id = 2) {
+/**
+ * Add a user & membership+to a group.
+ */
+function _og_member_cascade_add_user_membership($user, $nid, $member_id = 2) {
 	$uid = $user->uid;
 	$user_memberships = &$user->og_user_group_ref['und'];
 	// $ra_nid = array('target_id' => $nid);
@@ -326,7 +420,10 @@ function _add_user_membership($user, $nid, $member_id = 2) {
 	
 }
 
-function _revoke_user_membership($user, $nid, $state_id) {
+/**
+ * Revoke a user's memberhip in a group
+ */
+function _og_member_cascade_revoke_user_membership($user, $nid, $state_id) {
 	$uid = $user->uid;
 	$user_memberships = &$user->og_user_group_ref['und'];
 
@@ -336,78 +433,163 @@ function _revoke_user_membership($user, $nid, $state_id) {
 	og_ungroup("node", $nid, "user", $uid);
 }
 
-
-function get_subgroup_query($gid) {
+/**
+ * Build the query to get a group's subgroup
+ */
+function _og_member_cascade_get_subgroup_query($gid) {
 	if (empty($gid)) return;
-	$gid = mysql_real_escape_string($gid);
-	$table = mysql_real_escape_string('field_data_' . OG_MEMBER_CASCADE_SUPER_REF);
-	$target_id = mysql_real_escape_string(OG_MEMBER_CASCADE_SUPER_REF . '_target_id');
-	$query = "SELECT entity_id as etid FROM $table WHERE $target_id = $gid";
-	return db_query($query);
+	
+	$query = new EntityFieldQuery();
+  $result1 = $query
+    ->fieldCondition(OG_MEMBER_CASCADE_SUPER_REF, 'target_id', $gid, '=')
+    ->execute();
+ // dpm("RESULT !");
+ // dpm($result1);
+  $subgroup_nids = array();
+  if(empty($result1)) return $subgroup_nids;
+  foreach (reset($result1) as $key => $entity) {
+    $subgroup_nids[] = $key;
+  }
+  dpm("GET SUBGROUP QUERY");
+  dpm($subgroup_nids);
+  return $subgroup_nids;
 }
 
-function _get_supergroup_nids($gid) {
+/**
+ * Get the nids of a supergroup
+ */
+function _og_member_cascade_get_supergroup_nids($gid, $supergroup_ref = -1) {
+
   if (empty($gid)) return;
-  $gid = mysql_real_escape_string($gid);
-  $target_id = mysql_real_escape_string(OG_MEMBER_CASCADE_SUPER_REF . '_target_id');
-  $table = mysql_real_escape_string('field_data_' . OG_MEMBER_CASCADE_SUPER_REF);
-  $query = db_query("SELECT $target_id AS id FROM $table WHERE entity_id = $gid");
-  $super_nids = array();
-  foreach ($query as $q) {
-    $super_nids[] = $q->id;
+  $node2 = node_load($gid);
+  $g = $gid;
+
+  dpm("GET IDS");
+  dpm($supergroup_ref);
+  if ($supergroup_ref != -1) {
+    $supernids = array();
+    foreach($supergroup_ref['und'] as $array) 
+      $supernids[] = $array['target_id'];
+     dpm($supernids);
+     return $supernids;  
   }
+  
+	$query2 = new EntityFieldQuery();
+	$result = $query2
+//    ->entityCondition('entity_type', 'node')
+    ->entityCondition('entity_id', $g, '=')
+    ->fieldCondition(OG_MEMBER_CASCADE_FIELD, 'value', -1, '<>')
+    ->execute();
+  dpm("EFQ1");
+  dpm($result);
+dpm(key($result));
+dpm(reset($result));
+dpm(reset(reset($result)));
+  $wrapper = entity_metadata_wrapper(key($result), reset(reset($result)));
+  $type = key($result);
+  $node2 = $wrapper->value();
+  $node2 = node_load($gid);
+dpm("here");
+  dpm($node2);
+  dpm($type);
+
+  $field_items = field_get_items($type, $node2, OG_MEMBER_CASCADE_SUPER_REF);
+  
+  
+  
+  dpm($field_items);
+  $super_nids = array();
+  if (empty($field_items)) return $super_nids;
+
+  foreach ($field_items as $field_item) {
+    $super_nids[] = $field_item['target_id'];
+  }
+  dpm($super_nids);
+  
   return $super_nids;
 } 
 
-function no_subgroups($gid) {
+#function og_member_cascade_node_load() {
+#  dpm("NODE LOAD");
+#  $gid=27;
+#  $query = new EntityFieldQuery();
+#  $result = $query
+#    //->entityCondition('entity_type', 'node')
+#    ->entityCondition('entity_id', $gid, '=')
+#    ->fieldCondition(OG_MEMBER_CASCADE_SUPER_REF, 'target_id', '0', '<>')
+#    ->execute();
+#  dpm("EFQ1");
+#  dpm($result);
+
+#  $wrapper = entity_metadata_wrapper(key(reset($result)), reset(reset($result)));
+#  $node = $wrapper->value();
+#  $etype = $wrapper->type();
+#  dpm($node); dpm($etype);
+#  //dpm(entity_load('node', array(27)));
+#  dpm(field_get_items('node', $node, 'body'));
+
+#  dpm(field_info_instances());
+#   $og_member_cascade_fields = array(
+#    OG_MEMBER_CASCADE_FIELD,
+#    OG_MEMBER_CASCADE_SUPER_REF,
+#  );
+#  dpm($og_member_cascade_fields);
+#  foreach(field_info_instances() as $bundles) {
+#    if (key($bundles)=='user') break;
+#    foreach($bundles as $instances) {
+#      foreach($instances as $instance) {
+#        if(in_array($instance['field_name'], $og_member_cascade_fields)) {
+#          dpm("DELETE " . $instance['field_name']);
+#       } else {
+#        $field = field_info_field($instance['field_name']);
+#        if($field['type']=='entityreference' && 
+#          in_array($field['field_name'], $og_member_cascade_fields)) {
+#          dpm("ELSE COND");
+#        }
+#     }
+#   }
+# }
+#}
+#}
+/*function og_member_cascade_node_load() {
+  $gid=27; $group_type = 'apple_og'; // stdClass->type
+  $query = new EntityFieldQuery();
+  $result = $query
+    //->entityCondition('entity_type', 'node')
+    ->entityCondition('entity_id', $gid, '=')
+    ->fieldCondition(OG_MEMBER_CASCADE_SUPER_REF, 'target_id', '0', '<>')
+    ->execute();
+  dpm("EFQ1");
+  dpm($result);
+  dpm(entity_metadata_wrapper(key(reset($result)), reset(reset($result)))->value());
+  $query2 = new EntityFieldQuery();
+  $result = $query2
+    ->entityCondition('entity_type', 'og_membership')
+    ->propertyCondition('group_type', 'node', '=')
+    ->propertyCondition('gid', $gid, '=')
+    ->execute();
+  dpm("EFQ");
+  dpm($result);
+}*/
+
+/**
+ * Returns true if this group doesn't have any subgroups
+ */
+function _og_member_cascade_no_subgroups($gid) {
 	$thisgroup = node_load($gid);
+	dpm("IN NO SUBGOUPS");
+	dpm($thisgroup);
+	dpm($thisgroup->og_member_cascade);
 	if (!$thisgroup || 
 		!$thisgroup->og_member_cascade || 
 		$thisgroup->og_member_cascade['und'][0]['value'] == 0) return true;
 }
 
-function no_cascade($gid) {
+/**
+ * Returns true if this gruop's "member cascade" field not set to true
+ */
+function _og_member_cascade_no_cascade($gid) {
 	$supergrp = node_load($gid); 
 	return $supergrp->og_member_cascade['und'][0]['value'] == 0;
 }
 
-/**
- * Implements hook_og_fields_info.
- */
-/*
-function og_member_cascade_og_fields_info() {
-	
-	$allowed_values = array(
-    0 => 'No - subgroups of this group won\'t inherit its users.',
-    1 => 'Yes - subgroups of this group will inherit its users.',
-  );
-  $items[OG_MEMBER_CASCADE_FIELD] = array(
-    'type' => array('group'),
-    'description' => t('Determine if the subgroups of a group will inherit its users.'),
-    'entity' => array('node'),
-    'field' => array(
-      'field_name' => OG_MEMBER_CASCADE_FIELD,
-      'no_ui' => TRUE,
-      'type' => 'list_boolean',
-      'cardinality' => 1,
-      'settings' => array('allowed_values' => $allowed_values, 'allowed_values_function' => ''),
-    ),
-    'instance' => array(
-      'label' => t('OG Member Cascade Inheritance'),
-      'required' => TRUE,
-      'default_value' => array(0 => array('value' => 1)),
-      'widget_type' => 'options_select',
-      'view modes' => array(
-        'full' => array(
-          'label' => 'above',
-          'type' => 'options_onoff',
-        ),
-        'teaser' => array(
-          'label' => 'above',
-          'type' => 'options_onoff',
-        ),
-      ),
-    ),
-  );
-  return $items;
-}*/
