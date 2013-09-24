@@ -1,6 +1,0 @@
-name = Organic Groups Member Cascade
-description = "Cascade supergroup membership into subgroups."
-package = "Organic groups"
-dependencies[] = og
-dependencies[] = rules
-core = 7.x

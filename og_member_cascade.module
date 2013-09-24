@@ -6,10 +6,10 @@
  * group hierarchical structure.
  */
 
-// Error reporting
-error_reporting(E_ALL);
-ini_set('display_errors', TRUE);
-ini_set('display_startup_errors', TRUE);
+// Error reporting off
+// error_reporting(E_ALL);
+// ini_set('display_errors', TRUE);
+// ini_set('display_startup_errors', TRUE);
 
 // GPLv2 Licensing Stuff
 /**
@@ -43,27 +43,6 @@ define('OG_MEMBER_CASCADE_SUPER_REF', 'og_group_ref');
  * HOOKS
  * ===========================================
  */
-
-/**
- * Implements hook_og_role_grant
-
-function og_member_cascade_og_role_grant($entity_type, $gid, $uid, $rid) {
-  og_member_cascade_cascade_memberships_down($uid, $gid);
-}
-*/
-
-/**
- * Implements hook_og_role_change_permissions
-
-function og_member_cascade_og_role_change_permissions($role, $grant, $revoke) {
-  // dpm("OG ROLE CHANGE PERMISSIONS");
-  // dpm($role); // dpm($grant); // dpm($revoke);
-  if(!isset($role)) return;
-  $gid = $role->gid;
-  // TODO: Get uid
-  og_member_cascade_cascade_memberships_down($uid, $gid);
-}
-*/
 
 /**
  * Implements hook_og_membership_insert
@@ -294,8 +273,9 @@ function og_member_cascade_node_cascade($node) {
 
   if (is_string($node)||empty($node)||$node==null) return;
 
-   if (!empty($node->og_group_ref[LANGUAGE_NONE][0]['value'])) {
-    $supergroup_ref = $node->og_group_ref[LANGUAGE_NONE][0]['value'];
+  // Cascade memberships in from supergroup
+   if ($node->og_member_cascade_from_super[LANGUAGE_NONE][0]['value'] == 1) {
+    $supergroup_ref = $node->og_group_ref;
     $supergroup_nids = _og_member_cascade_get_supergroup_nids($nid, $supergroup_ref);
     $visited = array();
     if (!empty($supergroup_nids))
@@ -319,14 +299,14 @@ function og_member_cascade_node_cascade($node) {
  */
 function og_member_cascade_cascade_memberships_up($supergroup_nids, $thisnid, &$visited) {
 
-  if (!$supergroup_nids) return;
+  if (!$supergroup_nids || empty($supergroup_nids)) return;
 
   foreach ($supergroup_nids as $supergrp_nid) {
     $nid = $supergrp_nid;
     $supergrp = node_load($nid);
     if (!$supergrp->og_member_cascade || !$supergrp->og_member_cascade['und']) return;
     $subgroup_cascade = $supergrp->og_member_cascade['und'][0]['value'];
-    if ($subgroup_cascade && $nid != $thisnid && !in_array($nid, $visited) &&
+    if ($subgroup_cascade == 1 && $nid != $thisnid && !in_array($nid, $visited) &&
       _og_member_cascade_from_supergroup($thisnid)) {
         _og_member_cascade_add_all_supergroup_users($nid, $thisnid);
     }
@@ -424,8 +404,6 @@ function _og_member_cascade_get_subgroup_query($gid) {
   $query = new EntityFieldQuery();
   $result1 = $query
     ->entityCondition('entity_type', 'og_membership')
-    //->entityCondition('entity_id', $gid, '=')
-    //->fieldCondition(OG_MEMBER_CASCADE_SUPER_REF, 'target_id', $gid, '=')
     ->propertyCondition('gid', $gid, '=')
     ->propertyCondition('field_name', 'og_group_ref', '=')
     ->execute();
@@ -447,35 +425,17 @@ function _og_member_cascade_get_supergroup_nids($gid, $supergroup_ref = -1) {
   if (empty($gid)) return;
   $node2 = node_load($gid);
 
-  if ($supergroup_ref != -1) {
+  if ($supergroup_ref != -1) { // then extract supernids from $supergroup_ref
     $supernids = array();
     foreach($supergroup_ref['und'] as $array)
       $supernids[] = $array['target_id'];
      return $supernids;
   }
 
-  // Else use EFQ to get the supergroup nids
-  $query2 = new EntityFieldQuery();
-  $result = $query2
-    ->entityCondition('entity_type', 'node')
-    ->entityCondition('entity_id', $g, '=')
-    ->fieldCondition(OG_MEMBER_CASCADE_FIELD, 'value', -1, '<>')
-    ->execute();
-
-  $wrapper = entity_metadata_wrapper(key($result), reset(reset($result)));
-  $type = key($result);
-  $node2 = $wrapper->value();
-  $node2 = node_load($gid);
-
-  $field_items = field_get_items($type, $node2, OG_MEMBER_CASCADE_SUPER_REF);
-
-  $super_nids = array();
-  if (empty($field_items)) return $super_nids;
-
-  foreach ($field_items as $field_item) {
-    $super_nids[] = $field_item['target_id'];
-  }
-
+  $gid = mysql_real_escape_string($gid);
+  $query = db_query("SELECT gid FROM og_membership
+    WHERE field_name = 'og_group_ref' AND etid = $gid");
+  foreach($query as $q) $super_nids[] = $q->gid;
   return $super_nids;
 }
 
@@ -484,12 +444,9 @@ function _og_member_cascade_get_supergroup_nids($gid, $supergroup_ref = -1) {
  * Returns true if this group doesn't have any subgroups
  */
 function _og_member_cascade_no_subgroups($gid) {
- /* $query = new EntityFieldQuery();
-  $result = $query
-    ->entityCondition('entity_type', 'node')
-    ->entityCondition('entity_id', $gid)
-    ->fieldCondition('og_member_cascade', 'value', 2, '<>')
-    ->execute(); */
+
+  // Using this instead of EFQ b/c EFQ doesn't retrieve the value
+  // Also avoids overhead of node load
   $escgid = mysql_real_escape_string($gid);
   $query = db_query("SELECT og_member_cascade_value AS val
     FROM field_data_og_member_cascade
