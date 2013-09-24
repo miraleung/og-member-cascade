@@ -7,7 +7,8 @@
 
 // GPLv2 Licensing Stuff
 /**
-  * Copyright 2013 Mira Leung
+  * Copyright 2013 University of British Columbia
+  * @author Mira Leung
   *
   * This file is part of OG Member Cascade.
   *
@@ -30,29 +31,29 @@
  */
  function og_member_cascade_install() {
   echo "\nInstalling OG Member Cascade...\n";
-  
+
   // update weight
    db_update('system')
     ->fields(array('weight' => 2))
     ->condition('name', 'og_member_cascade', '=')
     ->execute();
-  
-  
+
+
   $og_group_name = OG_MEMBER_CASCADE_GROUP;
-	$field_cascade_name = OG_MEMBER_CASCADE_FIELD;
-	$field_og_supergroup_ref_name = OG_MEMBER_CASCADE_SUPER_REF;
+  $field_cascade_name = OG_MEMBER_CASCADE_FIELD;
+  $field_og_supergroup_ref_name = OG_MEMBER_CASCADE_SUPER_REF;
   $allowed_values = array(
       0 => 'No - do not cascade members into this group\'s subgroups.',
       1 => 'Yes - cascade members into  this group\'s subgroups.',
-    );	
-  
+    );
+
   $query = new EntityFieldQuery();
   $result = $query
     ->entityCondition('entity_type', 'node')
     ->propertyCondition('type', $og_group_name)
     ->propertyCondition('title', 'Group Name')
     ->execute();
-  
+
 #  echo(key($result) . " " . key(reset($result)) . key(reset(reset($result))."\n"));
   if (empty($result)) {
     $og_group = array(
@@ -72,11 +73,11 @@
     );
     node_type_save($og_group);
     echo "Created $og_group_name \n";
-  }  
-	
-	if (!field_info_field($field_cascade_name)) {
-	  $field = array(
-	    'active' => 1,
+  }
+
+  if (!field_info_field($field_cascade_name)) {
+    $field = array(
+      'active' => 1,
       'cardinality' => 1,
       'deleted' => 0,
       'entity_types' => array(),
@@ -97,16 +98,16 @@
       'translatable' => 0,
       'type' => 'list_boolean',
     );
-	
-	  $field = field_create_field($field);
-	  echo "Field " . OG_MEMBER_CASCADE_FIELD . " created. \n";
-	   
-	}
-	
-	// Check if any field instance of this exists
-	if (!field_info_instance('', $field_cascade_name, OG_MEMBER_CASCADE_FIELD)) {
-    
-	  $instance = array(
+
+    $field = field_create_field($field);
+    echo "Field " . OG_MEMBER_CASCADE_FIELD . " created. \n";
+
+  }
+
+  // Check if any field instance of this exists
+  if (!field_info_instance('', $field_cascade_name, OG_MEMBER_CASCADE_FIELD)) {
+
+    $instance = array(
       'bundle' => OG_MEMBER_CASCADE_GROUP,
       'default_value' => array(
         0 => array(
@@ -132,7 +133,7 @@
       ),
       'entity_type' => 'node',
       'field_name' => $field_cascade_name,
-      'label' => 'OG Member Cascade -- Member Cascade',
+      'label' => 'OG Member Cascade to subgroup',
       'required' => TRUE,
       'settings' => array(
         'user_register_form' => FALSE,
@@ -155,15 +156,107 @@
       ),
       'widget_type' => 'options_select',
     );
-	    
-	  field_create_instance($instance);	
-	  echo "Field instance OG Member Cascade created.\n";
-	}
-	
-	
-	
-	if  (!field_info_field($field_og_supergroup_ref_name)) {
-	  $field = array(
+
+    field_create_instance($instance);
+    echo "Field instance OG Member Cascade to subgroup created.\n";
+  }
+
+
+
+    $field_cascade_name = OG_MEMBER_CASCADE_FROM_SUPER_FIELD;
+      $allowed_values = array(
+      0 => 'No - do not cascade in members from this group\'s supergroups.',
+      1 => 'Yes - cascade in members from this group\'s supergroups.',
+    );
+
+   if (!field_info_field($field_cascade_name)) {
+    $field = array(
+      'active' => 1,
+      'cardinality' => 1,
+      'deleted' => 0,
+      'entity_types' => array(),
+      'field_name' => $field_cascade_name,
+      'foreign keys' => array(),
+      'indexes' => array(
+        'value' => array(
+          0 => 'value',
+        ),
+      ),
+      'locked' => 0,
+      'module' => 'list',
+      'no_ui' => TRUE,
+      'settings' => array(
+        'allowed_values' => $allowed_values,
+        'allowed_values_function' => '',
+      ),
+      'translatable' => 0,
+      'type' => 'list_boolean',
+    );
+
+    $field = field_create_field($field);
+    echo "Field " . OG_MEMBER_CASCADE_FROM_SUPER_FIELD . " created. \n";
+   }
+  // Check if any field instance of this exists
+  if (!field_info_instance('', $field_cascade_name, OG_MEMBER_CASCADE_FROM_SUPER_FIELD)) {
+
+    $instance = array(
+      'bundle' => OG_MEMBER_CASCADE_GROUP,
+      'default_value' => array(
+        0 => array(
+          'value' => 0,
+        ),
+      ),
+      'deleted' => 0,
+      'description' => '',
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'module' => 'list',
+          'settings' => array(),
+          'type' => 'list_default',
+          'weight' => 3,
+        ),
+        'teaser' => array(
+          'label' => 'above',
+          'settings' => array(),
+          'type' => 'hidden',
+          'weight' => 0,
+        ),
+      ),
+      'entity_type' => 'node',
+      'field_name' => $field_cascade_name,
+      'label' => 'OG Member Cascade from supergroup',
+      'required' => TRUE,
+      'settings' => array(
+        'user_register_form' => FALSE,
+      ),
+      'view modes' => array(
+        'full' => array(
+          'label' => 'above',
+          'type' => 'options_onoff',
+        ),
+        'teaser' => array(
+          'label' => 'above',
+          'type' => 'options_onoff',
+        ),
+      ),
+      'widget' => array(
+        'module' => 'options',
+        'settings' => array(),
+        'type' => 'options_buttons',
+        'weight' => 3,
+      ),
+      'widget_type' => 'options_select',
+    );
+
+    field_create_instance($instance);
+    echo "Field instance 'OG Member Cascade from Supergroup' created.\n";
+  }
+
+
+  /*
+  if  (!field_info_field($field_og_supergroup_ref_name)) {
+    $field = array(
       'active' => 1,
       'cardinality' => -1,
       'deleted' => 0,
@@ -197,14 +290,14 @@
       'translatable' => 0,
       'type' => 'entityreference',
     );
-    
+
    $field = field_create_field($field);
-	  echo "Field " . OG_MEMBER_CASCADE_SUPER_REF . " created.\n";
-	}
-	
-	if (!field_info_instance('', 	$field_og_supergroup_ref_name, OG_MEMBER_CASCADE_SUPER_REF)) {
-	  $instance = array(
-	    'default_value' => NULL,
+    echo "Field " . OG_MEMBER_CASCADE_SUPER_REF . " created.\n";
+  }
+
+  if (!field_info_instance('',  $field_og_supergroup_ref_name, OG_MEMBER_CASCADE_SUPER_REF)) {
+    $instance = array(
+      'default_value' => NULL,
       'default_value_function' => '',
       'deleted' => 0,
       'description' => '',
@@ -246,12 +339,12 @@
         'weight' => 4,
       ),
     );
-    
-    	    
-	  field_create_instance($instance);	
-	  echo "Field instance OG Supergroup Ref created.\n";
-	
-	}
+
+
+    field_create_instance($instance);
+    echo "Field instance OG Supergroup Ref created.\n";
+
+  }*/
 }
 
 /**
@@ -260,12 +353,12 @@
 function og_member_cascade_uninstall() {
   echo "\n In uninstall \n";
   $og_member_cascade_field = 'og_member_cascade';
-  $og_supergroup_ref = 'field_og_supergroup_ref';
+  $og_member_cascade_from_super = 'og_member_cascade_from_super';
   $og_member_cascade_group = 'og_member_cascade_group';
   $og_member_cascade_fields = array(
-    $og_member_cascade_field, $og_supergroup_ref,
+    $og_member_cascade_field, $og_member_cascade_from_super,
   );
-  
+
   // Delete content types
   node_type_delete($og_member_cascade_group);
   $m = db_update('node_type')
@@ -273,7 +366,7 @@ function og_member_cascade_uninstall() {
     ->condition('type', $og_member_cascade_group)
     ->condition('module', 'og_member_cascade')
     ->execute();
-        
+
   $n = db_delete('node_type')
     ->condition('type', $og_member_cascade_group)
     ->condition('module', 'og_member_cascade')
@@ -282,7 +375,7 @@ function og_member_cascade_uninstall() {
     echo "\n Deleted content type $og_member_cascade_group \n";
     drupal_set_message("Deleted content type $og_member_cascade_group", 'status');
 
-  
+
   // Delete fields
   foreach(field_info_instances() as $bundles) {
     foreach($bundles as $instances) {
@@ -296,8 +389,8 @@ function og_member_cascade_uninstall() {
          } else {
           $field = field_info_field($instance['field_name']);
           $field_name = $field['field_name'];
-          if($field['type']=='entityreference') 
-            foreach ($og_member_cascade_fields as $del_field) 
+          if($field['type']=='entityreference')
+            foreach ($og_member_cascade_fields as $del_field)
               if ($field_name == $del_field) {
                 field_delete_instance($instance);
                 echo "\n Deleted $field_name \n";
