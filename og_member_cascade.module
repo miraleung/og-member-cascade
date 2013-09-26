@@ -274,14 +274,16 @@ function og_member_cascade_node_cascade($node) {
   if (is_string($node)||empty($node)||$node==null) return;
 
   // Cascade memberships in from supergroup
-   if ($node->og_member_cascade_from_super[LANGUAGE_NONE][0]['value'] == 1) {
+   if (isset($node->og_member_cascade_from_super) &&
+    $node->og_member_cascade_from_super[LANGUAGE_NONE][0]['value'] == 1) {
+
     $supergroup_ref = $node->og_group_ref;
     $supergroup_nids = _og_member_cascade_get_supergroup_nids($nid, $supergroup_ref);
     $visited = array();
     if (!empty($supergroup_nids))
       og_member_cascade_cascade_memberships_up($supergroup_nids, $nid, $visited);
   }
-  if(!$node->og_member_cascade ||
+  if(!isset($node->og_member_cascade) ||
     $node->og_member_cascade[LANGUAGE_NONE][0]['value'] == 0) return; // no subgroups to cascade to
 
   $cascade = $node->og_member_cascade['und'][0]['value'];
@@ -377,7 +379,7 @@ function _og_member_cascade_add_user_membership($user, $nid, $member_id = 2) {
 
   // add user to the group
   og_group("node", $nid, $ra_membership);
-  // 1 => non-member, 2 => non-member, 3 => administrator member
+  // 1 => non-member, 2 => member, 3 => administrator member
   og_role_grant("node", $nid, $uid, $member_id); // regular member by default
 
 }
